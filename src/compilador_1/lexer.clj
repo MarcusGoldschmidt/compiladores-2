@@ -37,10 +37,10 @@
 (defn- create-token-update-text [match type text]
   {:match match
    :type  type
-   :text (subs text (count match))})
+   :text  (subs text (count match))})
 
 (defn- create-error [text]
-   {:match ""
+  {:match ""
    :text  text
    :type  :error
    :error "Syntax error"})
@@ -66,7 +66,16 @@
 (defn some-starts-with? [text array-list]
   (true? (some #(clojure.string/starts-with? text %) array-list)))
 
-(defn remove-first-word [text]
+(filter #(clojure.string/starts-with? "program" %) keys)
+
+(defn some-starts-exact-with? [text array-list]
+  (if-let [key (first (filter #(clojure.string/starts-with? text %) keys))]
+    (if (= \space (first (subs text (count key))))
+      true
+      false)
+    false))
+
+(defn remove-stop-words [text]
   (let [stop-word (re-find-first #"^( |\n|\t)*" text)
         new-text  (subs text (count stop-word))]
     new-text))
@@ -76,22 +85,22 @@
   value of regex, the type and the text"
   [regexs text]
   (cond
-    (clojure.string/blank? text) (create-eof)
-    (some-starts-with? text symbols) (create-token-update-text (exact-match-symbols text symbols) :symbol text)
-    (some-starts-with? text keys) (create-token-update-text (exact-match-symbols text keys) :key text)
-    :else (loop [r regexs]
-            (if-let [[x & xs] r]
-              (let [token   (create-token-update-text (re-find-first (first x) text) (second x) text)
-                    match (:match token)]
-                (if (not (clojure.string/blank? match))
-                  token
-                  (recur xs)))
-              (create-error text)))))
+    (clojure.string/blank? text)           (create-eof)
+    (some-starts-exact-with? text keys)    (create-token-update-text (exact-match-symbols text keys) :key text)
+    (some-starts-with? text symbols)       (create-token-update-text (exact-match-symbols text symbols) :symbol text)
+    :else                                  (loop [r regexs]
+                                             (if-let [[x & xs] r]
+                                               (let [token   (create-token-update-text (re-find-first (first x) text) (second x) text)
+                                                     match   (:match token)]
+                                                 (if (not (clojure.string/blank? match))
+                                                   token
+                                                   (recur xs)))
+                                               (create-error text)))))
 
 (defn map-tokens
   [text]
   (lazy-seq
-    (let [new-text (remove-first-word text)
+    (let [new-text (remove-stop-words text)
           result   (map-token-and-peek-text token-list new-text)
           text     (:text result)
           token    (dissoc result :text)]
@@ -99,8 +108,11 @@
         (cons token (map-tokens text))
         (cons token (lazy-seq))))))
 
-
 (take 3
+      (map-tokens "teste<>teste"))
+
+
+(doall
  (map-tokens "program teste
 	real a,b;
 	integer c, d;
