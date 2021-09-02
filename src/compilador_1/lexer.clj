@@ -6,6 +6,7 @@
            "real"
            "if"
            "then"
+           "end"
            "else"
            "integer"])
 
@@ -19,6 +20,7 @@
               "+"
               "-"
               "/"
+              ":"
               "<"
               ">"
               ":="
@@ -68,11 +70,18 @@
 
 (filter #(clojure.string/starts-with? "program" %) keys)
 
+(defn is-character? [t]
+  (let [compare (int t)
+        a       (int \a)
+        z       (int \z)
+        A       (int \A)
+        Z       (int \Z)]
+    (or (and (<= a compare) (>= z compare)) (and (<= A compare) (>= Z compare)))))
+
 (defn some-starts-exact-with? [text array-list]
   (if-let [key (first (filter #(clojure.string/starts-with? text %) keys))]
-    (if (= \space (first (subs text (count key))))
-      true
-      false)
+    (let [peek (first (subs text (count key)))]
+      (not (is-character? peek)))
     false))
 
 (defn remove-stop-words [text]
@@ -107,9 +116,6 @@
       (if (and (nil? (:error result)) (not= :eof (:type result)))
         (cons token (map-tokens text))
         (cons token (lazy-seq))))))
-
-(take 3
-      (map-tokens "teste<>teste"))
 
 
 (doall

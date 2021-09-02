@@ -1,12 +1,12 @@
 
 program teste
-	real a,b;
-	integer c, d;
+	real: a,b;
+	integer: c, d;
 begin 
     read(a);
     read(c);
   b := a * a + a;
-  d := 2*c + c
+  d := 2*c + c;
   if a > b then
   	write(a)
   else

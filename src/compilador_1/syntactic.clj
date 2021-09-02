@@ -1,19 +1,12 @@
 (ns compilador-1.syntactic
   (:require [compilador-1.lexer :as lex]))
 
-(declare dc variaveis comandos condicao expressao fator outros_termos espressao pfalse)
+(declare dc variaveis comandos condicao expressao fator outros_termos expressao pfalse)
 
 (defmacro def-syntax-pipeline [name & pipes]
   `(defn ~name []
     (fn [x#]
       (validate-syntax x# ~@pipes))))
-
-(macroexpand
- '(def-syntax-pipeline programa
-   (-check-value "program")
-   (-check-is-identifier)
-   (corpo)
-   (-check-value ".")))
 
 (defn- -create-erro [tokens current-token expected]
   {:tokens        tokens
@@ -26,11 +19,19 @@
    (fn [map]
      (let [tokens (:tokens map)]
        (if-let [token (first tokens)]
-         (if (= (key-to-compare token) value)
-           (assoc map :tokens (drop 1 tokens))
-           (-create-erro (drop 1 tokens) token value))
+         ; lex error
+         (if (= :error (:type token))
+           token
+           ; semantic error
+           (if (= (key-to-compare token) value)
+             (assoc map :tokens (drop 1 tokens))
+             (if (nil? (:last-erros map))
+               (-create-erro (drop 1 tokens) token value)
+               (-create-erro (drop 1 tokens) token (:last-erros map)))))
          (-create-erro (drop 1 (:tokens map)) (lex/create-eof) value)))))
   ([value] (-check-value value :match)))
+
+(nil? (:a {}))
 
 (defn on-detect-success [x f]
   (let [result (f x)]
@@ -59,18 +60,27 @@
 (defn- -check-empty-chain []
   (fn [map]
     (if-let [token (first (:tokens map))]
-      map
+      (assoc map :empty-chain true)
       (-create-erro (drop 1 (:tokens map)) (lex/create-eof) :empty))))
+
+(defn- is-valid-empty-chain-with-error [result errors xs]
+  (and
+   (true? (and (true? (:empty-chain result)) (> (count errors) 0) (= 0 (count xs))))))
+
+(defn- is-valid-empty-chain-without-error [result errors xs]
+  (and
+   (true? (and (true? (:empty-chain result)) (= (count errors) 0) (= 0 (count xs))))))
 
 (defn- -or-check-values [& args]
   (fn [map]
-    (loop [syntax args
-           errors []]
-      (if-let [[x & xs] syntax]
+    (loop [[x & xs] args
+           errors   []]
+      (if (not (nil? x))
         (let [result (apply validate-syntax (into [map] (vec x)))]
-          (if (nil? (:error result))
-            result
-            (recur xs (conj errors result))))
+          (cond
+            (is-valid-empty-chain-with-error result errors xs)    (assoc result :last-erros errors)
+            (nil? (:error result))                                result
+            :else                                                 (recur xs (conj errors (dissoc result :tokens)))))
         (-create-erro (drop 1 (:tokens map)) (lex/create-eof) errors)))))
 
 (defn- -fuction-statement [name]
@@ -123,10 +133,9 @@
 (def-syntax-pipeline fator
   (-or-check-values
    [(-check-is-identifier)]
-   ; TODO(Marcus) Validar tipo numero
    [(-check-is-number)]
    [(-check-value "(")
-    (espressao)
+    (expressao)
     (-check-value ")")]))
 
 (def-syntax-pipeline op_un
@@ -141,7 +150,7 @@
 
 (def-syntax-pipeline expressao
   (termo)
-  (outros_termos))
+  (outros-termos))
 
 
 (def-syntax-pipeline relacao
@@ -196,13 +205,34 @@
   (variaveis))
 
 (def-syntax-pipeline mais-dc
-  (-check-value ";")
-  (dc))
+  (-or-check-values
+   [(-check-value ";")
+    (dc)]
+   [(-check-empty-chain)]))
 
 (def-syntax-pipeline dc
   (-or-check-values
    [(dc-v) (mais-dc)]
    [(-check-empty-chain)]))
+
+(dissoc
+ ((corpo)
+   {:tokens       [{:match "real", :type :key}
+                   {:match ":", :type :symbol}
+                   {:match "a", :type :idem}
+                   {:match ",", :type :symbol}
+                   {:match "b", :type :idem}
+                   {:match ";", :type :symbol}
+                   {:match "begin", :type :key}
+                   {:match "read", :type :idem}
+                   {:match "(", :type :symbol}
+                   {:match "a", :type :idem}
+                   {:match ")", :type :symbol}
+                   {:match "end", :type :key}
+                   {:match ".", :type :key}]
+    :s-tree       {}
+    :symbol-table {}})
+ :tokens)
 
 (def-syntax-pipeline corpo
   (dc)
@@ -228,3 +258,9 @@
                   {:match ".", :type :key}]
    :s-tree       {}
    :symbol-table {}})
+
+(defn run-syntactic [tokens]
+  ((programa)
+    {:tokens       tokens
+     :s-tree       {}
+     :symbol-table {}}))
