@@ -1,4 +1,4 @@
-module Main where
+module Lexer where
 
 import Data.Char (isLetter, isNumber)
 import Data.Either (isLeft)
@@ -91,7 +91,8 @@ numberLexer token (x : xs) rowColumn
   | isNumber x = numberLexer (token ++ [x]) xs (plusColumn rowColumn)
   | x == '.' = numberDotLexer (token ++ [x]) xs (plusColumn rowColumn)
   | isStopWordOrSymbol x = Success $ Token token (Number Integer) rowColumn
-  | otherwise = initialState xs (plusColumn rowColumn)
+  | isLetter x = Success $ Token token (Number Integer) rowColumn
+  | otherwise = Error ("Erro sintático:" ++ [x]) rowColumn
 
 numberDotLexer :: String -> String -> RowColumn -> LexerResult
 numberDotLexer token [] rowColumn = Error "Esperado um número" rowColumn
@@ -110,21 +111,47 @@ wordLexer :: String -> String -> RowColumn -> LexerResult
 wordLexer token [] rowColumn = Success $ Token token (defineTokenType token) rowColumn
 wordLexer token (x : xs) rowColumn
   | isLetter x = wordLexer (token ++ [x]) xs $ plusColumn rowColumn
-  | isStopWordOrSymbol x = Success $ Token token (Number Float) rowColumn
+  | isStopWordOrSymbol x = Success $ Token token (defineTokenType token) rowColumn
   | otherwise = Error ("Erro sintático: " ++ [x]) rowColumn
+
+symbolLexer :: String -> String -> RowColumn -> LexerResult
+symbolLexer token [] rowColumn = Error "Erro sintático" rowColumn
+symbolLexer token (x:xs) rowColumn 
+    | x == '<' && second == '>' = Success $ Token "<>" Symbol rowColumn
+    | x == '>' && second == '=' = Success $ Token ">=" Symbol rowColumn
+    | x == ':' && second == '=' = Success $ Token ":=" Symbol rowColumn
+    | isSymbol x = Success $ Token [x] Symbol rowColumn
+    | otherwise = Error "Simbolo não reconhecido" rowColumn
+    where 
+        (second : _) = xs
 
 initialState :: String -> RowColumn -> LexerResult
 initialState [] rowColumn = Success $ Token "" EOF rowColumn
 initialState list rowColumn
-  | isLetter x = wordLexer "" list rowColumn
-  | isNumber x = numberLexer "" list rowColumn
-  | isSymbol x = numberLexer "" list rowColumn
-  | x == ' ' = initialState xs $ plusColumn rowColumn
-  | x == '\n' = initialState xs $ nextLine rowColumn
-  | x == '\t' = initialState xs $ plusColumn rowColumn
+  | isLetter x  = wordLexer "" list rowColumn
+  | isNumber x  = numberLexer "" list rowColumn
+  | isSymbol x  = symbolLexer "" list rowColumn
+  | x == ' '    = initialState xs $ plusColumn rowColumn
+  | x == '\n'   = initialState xs $ nextLine rowColumn
+  | x == '\t'   = initialState xs $ plusColumn rowColumn
   | otherwise = Error "Erro lexico" rowColumn
   where
     (x : xs) = list
 
-main :: IO ()
-main = do print (show $ initialState "valor" $ RowColumn 0 0)
+countFirstUselessWords [] = 0
+countFirstUselessWords (x:xs)
+  | x == ' ' || x == '\n' || x == '\t' = 1 + countFirstUselessWords xs
+  | otherwise = 0
+
+getTokensInternal :: String -> RowColumn -> [LexerResult]
+getTokensInternal code rc 
+    | Success (Token{tag=EOF}) <- result = [result] 
+    | Success token <- result = let
+        Token{value=v, rowColumn=nRc} = token
+        newCode = drop (length v + countFirstUselessWords code) code
+        in 
+            result : getTokensInternal newCode nRc
+    | Error _ _ <- result = [result]
+    | otherwise = [result]
+    where 
+        result = initialState code rc 
