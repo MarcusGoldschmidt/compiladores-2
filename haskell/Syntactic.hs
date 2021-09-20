@@ -2,9 +2,11 @@ module Syntactic where
 
 import Lexer (NumberType (Float, Integer), RawProgram (tokens), RowColumn (RowColumn), Token (Token, rowColumn, tag, value), TokenType (EOF, Identifier, KeyWord, Number, Symbol))
 
-data SyntacticError = FoundError String RowColumn | ExpectedAnyToken
+data SyntacticError = FoundError String RowColumn | ExpectedAnyToken deriving (Show)
 
-data SyntacticResult = Success [Token] | Error SyntacticError
+data SyntacticResult = Success [Token] | Error SyntacticError deriving (Show)
+
+assertValue esperado obtido = "Esperado: " ++ esperado ++ " obtido: " ++ obtido
 
 tokenTypeToError :: TokenType -> String
 tokenTypeToError tokenType = case tokenType of
@@ -24,10 +26,10 @@ transformValidade f token =
     Token {rowColumn = rc} = head token
 
 validadeValue :: String -> [Token] -> SyntacticResult
-validadeValue value = transformValidade (\(Token {value = tValue} : xs) -> (value == tValue, value))
+validadeValue value = transformValidade (\(Token {value = tValue} : xs) -> (value == tValue, assertValue value tValue))
 
 validadeTag :: TokenType -> [Token] -> SyntacticResult
-validadeTag tag = transformValidade (\(Token {tag = tTag} : xs) -> (tag == tTag, tokenTypeToError tag))
+validadeTag tag = transformValidade (\(Token {tag = tTag, value = v} : xs) -> (tag == tTag, tokenTypeToError tag ++ " encontrado: " ++ v))
 
 validadeSyntactic :: [[Token] -> SyntacticResult] -> [Token] -> SyntacticResult
 validadeSyntactic [] tokens = Success tokens
@@ -43,7 +45,7 @@ tipoVar [] = Error ExpectedAnyToken
 tipoVar (x : xs)
   | v == "real" = Success xs
   | v == "integer" = Success xs
-  | otherwise = Error $ FoundError "Esperado identificador" rc
+  | otherwise = Error $ FoundError ("Esperado identificador real ou inteiro, encontrado: " ++ v) rc
   where
     Token {value = v, rowColumn = rc} = x
 
@@ -148,13 +150,13 @@ comando (x : xs)
         validadeTag Identifier,
         validadeValue ")"
       ]
-      $ tail xs
+      xs
   | t == Identifier =
     validadeSyntactic
       [ validadeValue ":=",
         expressao
       ]
-      $ tail xs
+      xs
   | v == "if" =
     validadeSyntactic
       [ condicao,
@@ -163,15 +165,15 @@ comando (x : xs)
         pFalsa,
         validadeValue "$"
       ]
-      $ tail xs
-  | otherwise = Error $ FoundError "Comando não é valido" rc
+      xs
+  | otherwise = Error $ FoundError ("Comando invalido: " ++ v) rc
   where
     Token {value = v, rowColumn = rc, tag = t} = x
 
 maisComandos :: [Token] -> SyntacticResult
 maisComandos [] = Error ExpectedAnyToken
 maisComandos (x : xs)
-  | v == ";" = comandos $ tail xs
+  | v == ";" = comandos xs
   | otherwise = Success $ x : xs
   where
     Token {value = v, rowColumn = rc} = x
@@ -186,7 +188,7 @@ comandos =
 maisVar :: [Token] -> SyntacticResult
 maisVar [] = Error ExpectedAnyToken
 maisVar (x : xs)
-  | v == "," = variaveis $ tail xs
+  | v == "," = variaveis xs
   | otherwise = Success $ x : xs
   where
     Token {value = v, rowColumn = rc} = x
@@ -194,7 +196,7 @@ maisVar (x : xs)
 variaveis :: [Token] -> SyntacticResult
 variaveis =
   validadeSyntactic
-    [ validadeValue "ident",
+    [ validadeTag Identifier,
       maisVar
     ]
 
@@ -215,11 +217,17 @@ maisDc (x : xs)
     Token {value = v, rowColumn = rc} = x
 
 dc :: [Token] -> SyntacticResult
-dc =
-  validadeSyntactic
-    [ dcV,
-      maisDc
-    ]
+dc [] = Error ExpectedAnyToken
+dc (x : xs)
+  | v == "real" || v == "integer" =
+    validadeSyntactic
+      [ dcV,
+        maisDc
+      ]
+      $ x : xs
+  | otherwise = Success $ x : xs
+  where
+    Token {value = v, rowColumn = rc} = x
 
 corpo :: [Token] -> SyntacticResult
 corpo =
@@ -235,5 +243,6 @@ programa =
   validadeSyntactic
     [ validadeValue "program",
       validadeTag Identifier,
+      corpo,
       validadeValue "."
     ]

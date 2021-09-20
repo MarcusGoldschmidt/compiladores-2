@@ -82,7 +82,7 @@ plusColumn :: RowColumn -> RowColumn
 plusColumn (RowColumn x y) = RowColumn x (y + 1)
 
 nextLine :: RowColumn -> RowColumn
-nextLine (RowColumn x y) = RowColumn (x + 1) 0
+nextLine (RowColumn x y) = RowColumn (x + 1) 1
 
 numberLexer :: String -> String -> RowColumn -> LexerResult
 numberLexer token [] rowColumn = Success $ Token token (Number Integer) rowColumn
@@ -154,3 +154,6 @@ getTokensInternal code rc
   | otherwise = [result]
   where
     result = initialState code rc
+
+getTokens :: String -> [LexerResult]
+getTokens code = getTokensInternal code $ RowColumn 1 1
