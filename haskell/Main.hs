@@ -1,13 +1,17 @@
 module Main where
 
+import qualified Data.Sequence as Map
 import GHC.IO.Handle.FD (openFile)
 import Lexer (LexerResult (Success), RowColumn (RowColumn), Token (Token), getTokens)
+import Semantic (SemanticData (symbolTable, currentType))
+import qualified Semantic
 import Syntactic (SyntacticResult, programa)
 import System.Environment (getArgs)
-import System.IO (IOMode (ReadMode), readFile)
+import System.IO (readFile)
+
 
 run :: String -> SyntacticResult
-run = programa . lexerToTokens . getTokens
+run x = (programa . lexerToTokens . getTokens) x Semantic.empty 
 
 main :: IO ()
 main = do

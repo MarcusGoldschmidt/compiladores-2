@@ -21,13 +21,6 @@ data Token = Token
 
 data LexerResult = Success Token | Error String RowColumn deriving (Show)
 
-data RawProgram = RawProgram
-  { code :: String,
-    currentRowColumn :: RowColumn,
-    tokens :: [Token]
-  }
-  deriving (Show)
-
 keyWords =
   [ "program",
     "ident",
