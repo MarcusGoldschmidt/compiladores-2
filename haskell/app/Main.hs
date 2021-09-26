@@ -1,6 +1,6 @@
 module Main where
 
-import Lib ( compile )
+import Lib (compile)
 
 main :: IO ()
 main = compile

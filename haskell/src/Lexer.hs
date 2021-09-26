@@ -89,11 +89,11 @@ numberLexer token (x : xs) rowColumn
 numberDotLexer :: String -> String -> RowColumn -> LexerResult
 numberDotLexer token [] rowColumn = Error "Esperado um número" rowColumn
 numberDotLexer token (x : xs) rowColumn
-  | isNumber x = numberLexer (token ++ [x]) xs $ plusColumn rowColumn
+  | isNumber x = numberAfterDotLexer (token ++ [x]) xs $ plusColumn rowColumn
   | otherwise = Error ("Esperado um número, encontrado:" ++ [x]) rowColumn
 
 numberAfterDotLexer :: String -> String -> RowColumn -> LexerResult
-numberAfterDotLexer token [] rowColumn = Error "Esperado um número" rowColumn
+numberAfterDotLexer token [] rowColumn = Success $ Token token (Number Float) rowColumn
 numberAfterDotLexer token (x : xs) rowColumn
   | isNumber x = numberAfterDotLexer (token ++ [x]) xs $ plusColumn rowColumn
   | isStopWordOrSymbol x = Success $ Token token (Number Float) rowColumn

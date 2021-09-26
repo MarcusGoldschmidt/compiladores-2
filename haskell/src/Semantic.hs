@@ -1,20 +1,22 @@
 module Semantic where
 
 import qualified Data.Map as Map
-import Lexer (NumberType, Token (Token, tag), TokenType (Number))
+import qualified Lexer as Lex
 
-data IdentifierType = ProgramName | Variable NumberType deriving (Show)
+data ProgramType = Boolean | Number Lex.NumberType deriving (Show, Eq)
+
+data IdentifierType = ProgramName | Variable ProgramType deriving (Show)
 
 data SemanticData = SemanticData
   { symbolTable :: Map.Map String IdentifierType,
-    currentType :: Maybe NumberType
+    currentType :: Maybe ProgramType
   }
   deriving (Show)
 
-getIdentifierType :: Token -> SemanticData -> Maybe IdentifierType
+getIdentifierType :: Lex.Token -> SemanticData -> Maybe IdentifierType
+getIdentifierType Lex.Token {Lex.tag = (Lex.Number variableType)} _ = Just $ Variable $ Number variableType
 getIdentifierType token SemanticData {currentType = Nothing} = Just ProgramName
-getIdentifierType Token {tag = (Number variableType)} SemanticData {currentType = Just a} = Just $ Variable variableType
-getIdentifierType _ _ = Nothing
+getIdentifierType token SemanticData {currentType = Just variableType} = Just $ Variable variableType
 
 empty :: SemanticData
 empty = SemanticData {symbolTable = Map.empty, currentType = Nothing}
