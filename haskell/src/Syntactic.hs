@@ -1,14 +1,16 @@
 module Syntactic where
 
+import Codegen (Instruction (Instruction, argument1, argument2, operator), MetaData (MetaData), Operador (AWAITING), meta)
+import qualified Codegen as Gen
 import Data.Map (insert, member)
 import qualified Data.Map as Map
 import Data.Maybe (isJust, isNothing)
 import qualified Data.Maybe
 import Lexer (LexerResult, NumberType (Float, Integer), RowColumn (RowColumn), Token (Token, rowColumn, tag, value), TokenType (EOF, Identifier, KeyWord, Number, Symbol))
-import Semantic (IdentifierType (ProgramName, Variable), ProgramType, SemanticData (SemanticData, currentType, symbolTable), getIdentifierType)
+import Semantic (IdentifierType (ProgramName, Variable), ProgramType, SemanticData (SemanticData, currentType, genCode, symbolTable), getIdentifierType, mergeTempMathInstruction)
+import qualified Semantic as Gen
 import qualified Semantic as Sem
-import qualified Semantic as Sen
-import Utils (head', tail1)
+import Utils (findAndReplace, head', last', tail1)
 
 data AnalyzerError = FoundError String RowColumn | ExpectedAnyToken deriving (Show)
 
@@ -19,13 +21,128 @@ addVariable s@(Success tks@(x@Token {tag = Identifier} : _) sd) =
   if member v st
     then Error $ FoundError ("Variavel \"" ++ v ++ "\" ja foi declarada") rc
     else case numberType of
-      Just a -> Success tks $ sd {symbolTable = insert v a st}
+      Just a -> case a of
+        ProgramName -> Success tks $ sd {symbolTable = insert v a st}
+        Variable (Sem.Number number) -> Success tks $ Sem.appendCodeGen (Gen.variable v number) sd {symbolTable = insert v a st}
+        _ -> Error $ FoundError (v ++ " nao e um tipo valido") rc
       Nothing -> Error $ FoundError (v ++ " nao e um tipo valido") rc
   where
     SemanticData {symbolTable = st} = sd
     Token {value = v, tag = t, rowColumn = rc} = x
     numberType = getIdentifierType x sd
 addVariable s = s
+
+addStopCodeGen :: [Token] -> SemanticData -> AnalyzerResult
+addStopCodeGen tks sd = Success tks $ Sem.addStop sd
+
+addMetaLastCodeGen :: String -> [Token] -> SemanticData -> AnalyzerResult
+addMetaLastCodeGen meta tks sd = Success tks $ Sem.addMeta meta sd
+
+addCodegenFunction :: String -> [Token] -> SemanticData -> AnalyzerResult
+addCodegenFunction fuctionName tks@(x : xs) sd =
+  Success tks $ Gen.appendCodeGen (Gen.functionCall fuctionName variable) sd
+  where
+    variable = value x
+addCodegenFunction _ [] sd = Success [] sd
+
+addCodegenPartialFunction :: String -> [Token] -> SemanticData -> AnalyzerResult
+addCodegenPartialFunction fuctionName tks@(x : xs) sd =
+  Success tks $ Gen.appendCodeGen (Gen.partialFunctionCall fuctionName $ Sem.nextTempVar sd) sd
+  where
+    variable = value x
+addCodegenPartialFunction _ [] sd = Success [] sd
+
+addVariableToInstructions :: [Token] -> SemanticData -> AnalyzerResult
+addVariableToInstructions [] sd = Error ExpectedAnyToken
+addVariableToInstructions tks@(x : xs) sd =
+  case lastIns of
+    Just a ->
+      case meta a of
+        Just (MetaData "temp") -> Success tks $ sd {genCode = Sem.addSecondArgumentLastInstruction parans $ genCode sd}
+        _ -> Success tks sdNewEmptyInstruction
+    _ -> Success tks sdNewEmptyInstruction
+  where
+    parans = value x
+    lastIns = last' $ genCode sd
+    sdNewEmptyInstruction = Gen.appendCodeGen (Gen.emptyInstructionWithParameterAndResult parans (Sem.currentTempVar sd) $ Sem.nextTempVar sd) sd
+
+addMathToInstructions :: String -> [Token] -> SemanticData -> AnalyzerResult
+addMathToInstructions parans [] sd = Error ExpectedAnyToken
+addMathToInstructions parans tks@(x : xs) sd =
+  case lastIns of
+    Just Instruction {operator = AWAITING} -> Success tks $ mergeTempMathInstruction parans sd
+    Just a ->
+      case meta a of
+        Just (MetaData "temp") -> Success tks $ Sem.addTempMathInstruction (value x) sd
+        _ -> Success tks sdNewEmptyInstruction
+    _ -> error "Operacao de adicao invalida"
+  where
+    lastIns = last' $ genCode sd
+    sdNewEmptyInstruction = Gen.appendCodeGen (Gen.emptyInstructionWithParameterAndResult parans (Sem.currentTempVar sd) $ Sem.nextTempVar sd) sd
+
+addAssignment :: String -> [Token] -> SemanticData -> AnalyzerResult
+addAssignment variable tks sd =
+  case lastIns of
+    Just Instruction {operator = AWAITING, argument1 = value} -> Success tks $ Sem.replaceLastCodeGen (Gen.Instruction Gen.ASSIGNMENT value "" (Gen.Result variable) Nothing) sd
+    Just a -> Success tks $ Sem.appendCodeGen (Gen.Instruction Gen.ASSIGNMENT lastTemp "" (Gen.Result variable) Nothing) sd
+    _ -> error "Operacao de adicao invalida"
+  where
+    lastTemp = Sem.currentTempVar sd
+    lastIns = last' $ genCode sd
+
+addCondicaoCodeGen :: [Token] -> SemanticData -> AnalyzerResult
+addCondicaoCodeGen tks sd =
+  Success tks $ Sem.appendCodeGen (Gen.Instruction (Gen.COMPARE compare) var1 var2 (Gen.Result $ Gen.nextTempVar sd) $ Just $ MetaData "temp") sd3
+  where
+    (var1, sd1) = Sem.findVariableByMeta "cond1" sd
+    (var2, sd2) = Sem.findVariableByMeta "cond2" sd1
+    (compare, sd3) = Sem.findVariableByMeta "compare" sd2
+
+addJfCodeGen :: [Token] -> SemanticData -> AnalyzerResult
+addJfCodeGen tks sd =
+  Success tks $ Sem.appendCodeGen (Gen.Instruction Gen.JF (Sem.currentTempVar sd) "" (Gen.Result "") $ Just $ MetaData "JF") sd
+
+addInstructionMeta :: String -> [Token] -> SemanticData -> AnalyzerResult
+addInstructionMeta tag tks sd =
+  Success tks $ Sem.appendCodeGen (Gen.Instruction Gen.AWAITING value "" (Gen.Result "") $ Just $ MetaData tag) sd
+  where
+    Token {value = value} = head tks
+
+addFixPfJump :: [Token] -> SemanticData -> AnalyzerResult
+addFixPfJump tks sd =
+  Success tks $ sd {genCode = newList}
+  where
+    listCode = genCode sd
+    currentLine = 1 + length listCode
+    Instruction {argument1 = arg1} = Sem.findInstructionByMeta "JF" sd
+    compare x = case meta x of
+      Just a -> a == MetaData "JF"
+      _ -> False
+    newList = findAndReplace compare (Gen.Instruction Gen.JF arg1 (show currentLine) (Gen.Result "") $ Just $ MetaData "JF") listCode
+
+addIncrementPfJump :: [Token] -> SemanticData -> AnalyzerResult
+addIncrementPfJump tks sd =
+  Success tks $ sd {genCode = newList}
+  where
+    listCode = genCode sd
+    ins@Instruction {argument1 = arg1, argument2 = line} = Sem.findInstructionByMeta "JF" sd
+    newLine = read line :: Int
+    compare x = case meta x of
+      Just a -> a == MetaData "JF"
+      _ -> False
+    newList = findAndReplace compare (Gen.Instruction Gen.JF arg1 (show newLine) (Gen.Result "") $ Just $ MetaData "JF") listCode
+
+addFixGoto :: [Token] -> SemanticData -> AnalyzerResult
+addFixGoto tks sd =
+  Success tks $ sd {genCode = newList}
+  where
+    listCode = genCode sd
+    currentLine = length listCode
+    (arg1, _) = Sem.findVariableByMeta "GOTO" sd
+    compare x = case meta x of
+      Just a -> a == MetaData "GOTO"
+      _ -> False
+    newList = findAndReplace compare (Gen.Instruction Gen.GOTO (show currentLine) "" (Gen.Result "") Nothing) listCode
 
 addCurrentType :: ProgramType -> [Token] -> SemanticData -> AnalyzerResult
 addCurrentType pt tks sd = Success tks $ sd {currentType = Just pt}
@@ -150,6 +267,15 @@ validadeAfter f1 f2 tks sd =
   where
     result1 = f1 tks sd
 
+executeMany :: [[Token] -> SemanticData -> AnalyzerResult] -> [Token] -> SemanticData -> AnalyzerResult
+executeMany (f : fs) tks sd =
+  case result of
+    Success _ nsd -> executeMany fs tks nsd
+    _ -> result
+  where
+    result = f tks sd
+executeMany [] tks sd = Success tks sd
+
 semanticPipeline :: [Token] -> SemanticData -> [AnalyzerResult -> AnalyzerResult] -> Maybe AnalyzerResult
 semanticPipeline tks sd = head' . tail1 . dropWhile (not . compareError) . scanl (\acc fun -> fun acc) (Success tks sd)
   where
@@ -182,7 +308,15 @@ tipoVar (x : xs) sd
 pFalsa :: [Token] -> SemanticData -> AnalyzerResult
 pFalsa [] _ = Error ExpectedAnyToken
 pFalsa (x : xs) sd
-  | v == "else" = comandos xs sd
+  | v == "else" =
+    validadeSyntactic
+      [ addInstructionMeta "GOTO",
+        comandos,
+        addFixGoto,
+        addIncrementPfJump
+      ]
+      xs
+      sd
   | otherwise = Success (x : xs) sd
   where
     Token {value = v, rowColumn = rc, tag = t} = x
@@ -192,10 +326,12 @@ maisFatores [] _ = Error ExpectedAnyToken
 maisFatores (x : xs) sd
   | v == "*" || v == "/" =
     validadeSyntactic
-      [ fator,
+      [ addMathToInstructions v,
+        skipToken,
+        fator,
         maisFatores
       ]
-      xs
+      (x : xs)
       sd
   | otherwise = Success (x : xs) sd
   where
@@ -206,10 +342,12 @@ outrosTermos [] _ = Error ExpectedAnyToken
 outrosTermos (x : xs) sd
   | v == "+" || v == "-" =
     validadeSyntactic
-      [ termo,
+      [ addMathToInstructions v,
+        skipToken,
+        termo,
         outrosTermos
       ]
-      xs
+      (x : xs)
       sd
   | otherwise = Success (x : xs) sd
   where
@@ -218,9 +356,18 @@ outrosTermos (x : xs) sd
 fator :: [Token] -> SemanticData -> AnalyzerResult
 fator [] _ = Error ExpectedAnyToken
 fator (x : xs) sd
-  | t == Identifier = validadeSyntactic [verifyIfIdentifierExist, setCurrentTypeIfNotExist, verifyCurrentType, skipToken] (x : xs) sd
-  | t == Number Integer = validadeSyntactic [setCurrentTypeIfNotExist, verifyCurrentType, skipToken] (x : xs) sd
-  | t == Number Float = validadeSyntactic [setCurrentTypeIfNotExist, verifyCurrentType, skipToken] (x : xs) sd
+  | t == Identifier =
+    validadeSyntactic
+      [ verifyIfIdentifierExist,
+        setCurrentTypeIfNotExist,
+        verifyCurrentType,
+        addVariableToInstructions,
+        skipToken
+      ]
+      (x : xs)
+      sd
+  | t == Number Integer = validadeSyntactic [setCurrentTypeIfNotExist, verifyCurrentType, addVariableToInstructions, skipToken] (x : xs) sd
+  | t == Number Float = validadeSyntactic [setCurrentTypeIfNotExist, verifyCurrentType, addVariableToInstructions, skipToken] (x : xs) sd
   | v == "(" =
     validadeSyntactic
       [ expressao,
@@ -228,7 +375,7 @@ fator (x : xs) sd
       ]
       xs
       sd
-  | otherwise = Error $ FoundError "Esperado um fator" rc
+  | otherwise = Error $ FoundError (show x) rc
   where
     Token {value = v, rowColumn = rc, tag = t} = x
 
@@ -257,9 +404,9 @@ expressao =
 
 relacao :: [Token] -> SemanticData -> AnalyzerResult
 relacao [] _ = Error ExpectedAnyToken
-relacao (x : xs) sd =
+relacao tks@(x : xs) sd =
   if v `elem` ["<", ">", "=", "<>", ">=", "<="]
-    then Success xs sd
+    then Success tks sd
     else Error $ FoundError "Esperado simbolo de comparação" rc
   where
     Token {value = v, rowColumn = rc} = x
@@ -268,8 +415,14 @@ condicao :: [Token] -> SemanticData -> AnalyzerResult
 condicao =
   validadeSyntactic
     [ expressao,
+      addMetaLastCodeGen "cond1",
       relacao,
-      expressao
+      addInstructionMeta "compare",
+      skipToken,
+      expressao,
+      addMetaLastCodeGen "cond2",
+      addCondicaoCodeGen,
+      addJfCodeGen
     ]
 
 comando :: [Token] -> SemanticData -> AnalyzerResult
@@ -278,7 +431,8 @@ comando (x : xs) sd
   | v == "read" || v == "write" =
     validadeSyntactic
       [ validadeValue "(",
-        validadeAfter (validadeTag Identifier) verifyIfIdentifierExist,
+        executeMany [validadeTag Identifier, verifyIfIdentifierExist, addCodegenFunction v],
+        skipToken,
         validadeValue ")"
       ]
       xs
@@ -288,7 +442,8 @@ comando (x : xs) sd
       [ setCurrentTypeForVariableType,
         skipToken,
         validadeValue ":=",
-        expressao
+        expressao,
+        addAssignment v
       ]
       (x : xs)
       sd
@@ -297,6 +452,7 @@ comando (x : xs) sd
       [ condicao,
         validadeValue "then",
         comandos,
+        addFixPfJump,
         pFalsa,
         validadeValue "$"
       ]
@@ -309,7 +465,7 @@ comando (x : xs) sd
 maisComandos :: [Token] -> SemanticData -> AnalyzerResult
 maisComandos [] _ = Error ExpectedAnyToken
 maisComandos (x : xs) sd
-  | v == ";" = comandos xs sd
+  | v == ";" = validadeSyntactic [removeType, comandos] xs sd
   | otherwise = Success (x : xs) sd
   where
     Token {value = v, rowColumn = rc} = x
@@ -387,5 +543,6 @@ programa =
       validadeTag Identifier,
       corpo,
       validadeValue ".",
+      addStopCodeGen,
       validadeTag EOF
     ]

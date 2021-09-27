@@ -36,8 +36,7 @@ keyWords =
 stopWords = [" ", "\n", "\t"]
 
 symbols =
-  [ "*",
-    ";",
+  [ ";",
     "*",
     "+",
     "-",
@@ -111,6 +110,7 @@ symbolLexer token [] rowColumn = Error "Erro sintático" rowColumn
 symbolLexer token (x : xs) rowColumn
   | x == '<' && second == '>' = Success $ Token "<>" Symbol rowColumn
   | x == '>' && second == '=' = Success $ Token ">=" Symbol rowColumn
+   | x == '<' && second == '=' = Success $ Token "<=" Symbol rowColumn
   | x == ':' && second == '=' = Success $ Token ":=" Symbol rowColumn
   | isSymbol x = Success $ Token [x] Symbol rowColumn
   | otherwise = Error "Simbolo não reconhecido" rowColumn

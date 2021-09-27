@@ -21,6 +21,8 @@ lexerToTokens (x : xs)
 main :: IO ()
 main = do
 
-  let a = (lexerToTokens . getTokens) "program teste real: a,b,c,d; begin a := 2.0 * a + a end."
+  let a = (lexerToTokens . getTokens) "if a <= b then if b <= a then if a = b then write(a)$$$;"
 
-  print a
+  mapM_ print a
+
+  print ""
