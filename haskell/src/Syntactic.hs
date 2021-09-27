@@ -120,8 +120,8 @@ addFixPfJump tks sd =
       _ -> False
     newList = findAndReplace compare (Gen.Instruction Gen.JF arg1 (show currentLine) (Gen.Result "") $ Just $ MetaData "JF") listCode
 
-addIncrementPfJump :: [Token] -> SemanticData -> AnalyzerResult
-addIncrementPfJump tks sd =
+addIncrementJfJump :: [Token] -> SemanticData -> AnalyzerResult
+addIncrementJfJump tks sd =
   Success tks $ sd {genCode = newList}
   where
     listCode = genCode sd
@@ -312,8 +312,7 @@ pFalsa (x : xs) sd
     validadeSyntactic
       [ addInstructionMeta "GOTO",
         comandos,
-        addFixGoto,
-        addIncrementPfJump
+        addFixGoto
       ]
       xs
       sd

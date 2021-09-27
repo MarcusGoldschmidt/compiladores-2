@@ -1,13 +1,19 @@
 program teste
-    real: a,b;
-    integer: c, d;
+	real: a,b;
+	integer: c, d;
 begin
-  if a > b then
-    if b <= a then
-      if a = b then
+	read(a);
+	read(c);
+    b := a * a + a;
+    d := 2*c + c;
+    if a > b then
         write(a)
-      $
+    else
+        write(b)
+    $;
+    if d < c then
+        write(d)
+    else
+        write(c)
     $
-  $;
-  write(b)
 end.

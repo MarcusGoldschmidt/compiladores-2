@@ -25,6 +25,7 @@ transformInstruction x =
     operatorToString x = case op of
       MATH a -> a
       COMPARE a -> a
+      ASSIGNMENT -> ":="
       _ -> show op
 
 compile :: IO ()
