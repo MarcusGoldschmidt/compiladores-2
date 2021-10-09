@@ -1,6 +1,6 @@
-# Compiladores 1
+# Compiladores 2
 
-Projeto para a disciplina de compiladores 1
+Projeto para a disciplina de compiladores 2
 
 
 ## Como executar o projeto
@@ -13,7 +13,10 @@ Execute os seguintes comando
 
 ```sd
 cd haskell
-stack run ./exemplo.lalg.txt
+# Gerar o codigo intermediario
+stack run ./exemplo.lalg.txt > output.txt
+# Interpretar o codigo gerado
+stack run interpreter ./output.txt
 ```
 
 ## Automato do analisador léxico

@@ -3,17 +3,34 @@ module Codegen where
 import qualified Lexer as Lex
 
 data Operador
-  = ALME
-  | READ
-  | WRITE
-  | JF
-  | GOTO
+  = INPP
+  | ALME
   | PARA
-  | ASSIGNMENT
-  | MATH String
-  | COMPARE String
-  | AWAITING
-  deriving (Show, Eq)
+  | LEIT
+  | ARMZ
+  | CRVL
+  | CRCT
+  | IMPR
+  | SOMA
+  | SUBT
+  | MULT
+  | DIVI
+  | INVE
+  | -- <
+    CPME
+  | -- >
+    CPMA
+  | -- =
+    CPIG
+  | -- <>
+    CDES
+  | -- <=
+    CPMI
+  | -- >=
+    CMAI
+  | DSVF
+  | DSVI
+  deriving (Eq, Ord, Enum, Read, Show)
 
 mathOperators =
   [ "*",
@@ -28,42 +45,71 @@ newtype Result = Result String deriving (Show, Eq)
 
 data Instruction = Instruction
   { operator :: Operador,
-    argument1 :: String,
-    argument2 :: String,
-    result :: Result,
+    argument1 :: Int,
     meta :: Maybe MetaData
   }
   deriving (Show, Eq)
 
-variable :: String -> Lex.NumberType -> Instruction
-variable name t = Instruction ALME firstArg "" (Result name) Nothing
+variable :: Instruction
+variable = Instruction ALME 1 Nothing
+
+functionCall :: String -> Int -> [Instruction]
+functionCall fName variable =
+  case (fName, fName `elem` mathOperators) of
+    ("read", _) ->
+      [ Instruction LEIT 0 Nothing,
+        Instruction ARMZ variable Nothing
+      ]
+    ("write", _) ->
+      [ Instruction CRVL variable Nothing,
+        Instruction IMPR 0 Nothing
+      ] -- TODO: Math
+    _ -> error $ "Nao foi encontrado operador: " ++ fName
+
+loadVariable :: Int -> Instruction
+loadVariable index = Instruction CRVL index Nothing
+
+assignmentVariable :: Int -> Instruction
+assignmentVariable index = Instruction ARMZ index Nothing
+
+loadValue :: Int -> Instruction
+loadValue value = Instruction CRCT value Nothing
+
+openInstruction :: Operador -> Int -> Instruction
+openInstruction op arg1 = Instruction op arg1 Nothing
+
+mathOperator :: String -> Instruction
+mathOperator v = case v of
+  "+" -> Instruction SOMA 0 Nothing
+  "-" -> Instruction SUBT 0 Nothing
+  "/" -> Instruction DIVI 0 Nothing
+  "*" -> Instruction MULT 0 Nothing
+  _ -> error "Esperado operador"
+
+isMathOperator :: Instruction -> Bool
+isMathOperator ins =
+  op `elem` [SOMA .. INVE]
   where
-    firstArg = case t of
-      Lex.Float -> "0.0"
-      Lex.Integer -> "0"
+    op = operator ins
 
-emptyInstructionWithParameterAndResult :: String -> String -> String -> Instruction
-emptyInstructionWithParameterAndResult a b r = Instruction AWAITING a b (Result r) $ Just $ MetaData "temp"
+matchCompareOperator :: String -> Operador
+matchCompareOperator a = case a of
+  "<" -> CPME
+  ">" -> CPMA
+  "=" -> CPIG
+  "<>" -> CDES
+  "<=" -> CPMI
+  ">=" -> CMAI
+  _ -> error $ "Operador " ++ a ++ " nao valido"
 
-functionCall :: String -> String -> Instruction
-functionCall fName variable = Instruction operator variable "" (Result "") Nothing
+compareOperator :: String -> Instruction
+compareOperator s =
+  Instruction op 0 Nothing
   where
-    operator = case (fName, fName `elem` mathOperators) of
-      ("read", _) -> READ
-      ("write", _) -> WRITE
-      (_, True) -> MATH fName
-      _ -> error $ "Nao foi encontrado operador: " ++ fName
+    op = matchCompareOperator s
 
-partialFunctionCall :: String -> String -> Instruction
-partialFunctionCall fName = openInstruction operator
-  where
-    operator =
-      if fName `elem` mathOperators
-        then MATH fName
-        else error $ "Nao foi encontrado operador: " ++ fName
+dsvfOperator :: Instruction
+dsvfOperator = Instruction DSVF 0 Nothing
 
-openInstruction :: Operador -> String -> Instruction
-openInstruction op result = Instruction op "" "" (Result result) $ Just $ MetaData "temp"
-
-openTempMathInstruction :: String -> String -> Instruction
-openTempMathInstruction op result = Instruction (MATH op) "" "" (Result result) $ Just $ MetaData "temp"
+dsviOperator :: Int -> Instruction
+dsviOperator index = Instruction DSVI index Nothing

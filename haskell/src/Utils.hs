@@ -27,3 +27,9 @@ findAndReplace f replace list =
   first ++ [replace] ++ tail second
   where
     (first, second) = partitionByDelimiter f list
+
+replaceNth :: Int -> a -> [a] -> [a]
+replaceNth _ _ [] = []
+replaceNth n newVal (x:xs)
+  | n == 0 = newVal:xs
+  | otherwise = x:replaceNth (n-1) newVal xs
